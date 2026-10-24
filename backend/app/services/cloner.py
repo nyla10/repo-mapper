@@ -1,38 +1,33 @@
+import os
 import tempfile
+from git import Repo
 from pathlib import Path
-import git
-from fastapi import HTTPException
-from app.config import settings
 
 class RepoCloner:
-    @staticmethod
-    def clone_repository(repo_url: str) -> tuple[tempfile.TemporaryDirectory, Path]:
-        """
-        Clones a GitHub repository into a secure temporary directory.
-        Returns the temp_dir object (to keep it alive) and the Path object to the repo.
-        """
+    def __init__(self, repo_url: str):
+        self.repo_url = repo_url
+
+    def clone_and_scan(self):
+        # Create a temporary directory that auto-deletes when done
         temp_dir = tempfile.TemporaryDirectory()
-        repo_path = Path(temp_dir.name)
-
         try:
-           
-            git.Repo.clone_from(
-                url=str(repo_url),
-                to_path=repo_path,
-                depth=1,
-                single_branch=True
-            )
-        except git.GitCommandError as e:
+            # Clone the repository into the temporary directory
+            Repo.clone_from(self.repo_url, temp_dir.name)
+            
+            # Scan all files using pathlib
+            repo_path = Path(temp_dir.name)
+            files = []
+            
+            for path in repo_path.glob("**/*"):
+                # Skip hidden git files and directories
+                if ".git" in path.parts:
+                    continue
+                if path.is_file():
+                    # Get relative path from repo root
+                    relative_path = path.relative_to(repo_path)
+                    files.append(str(relative_path))
+                    
+            return files
+        finally:
+        # Clean up temporary directory
             temp_dir.cleanup()
-            raise HTTPException(
-                status_code=400,
-                detail=f"Git clone failed. Check if the repository URL is valid and public. Error: {e.stderr.strip()}"
-            )
-        except Exception as e:
-            temp_dir.cleanup()
-            raise HTTPException(
-                status_code=500,
-                detail=f"An unexpected error occurred during repository cloning: {str(e)}"
-            )
-
-        return temp_dir, repo_path
